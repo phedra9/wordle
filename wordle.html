@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Wordle – Devine MERCI</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #121213;
+      color: #fff;
+      font-family: 'Arial', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      letter-spacing: 4px;
+      border-bottom: 2px solid #3a3a3c;
+      padding-bottom: 12px;
+      margin-bottom: 24px;
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+    }
+
+    #grille {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 24px;
+    }
+
+    .ligne { display: flex; gap: 6px; }
+
+    .case {
+      width: 62px;
+      height: 62px;
+      border: 2px solid #3a3a3c;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      font-weight: bold;
+      text-transform: uppercase;
+      transition: background 0.3s, border-color 0.3s;
+    }
+
+    .case.remplie  { border-color: #565758; }
+    .case.correcte { background: #538d4e; border-color: #538d4e; }
+    .case.presente { background: #b59f3b; border-color: #b59f3b; }
+    .case.absente  { background: #3a3a3c; border-color: #3a3a3c; }
+
+    #message {
+      font-size: 1.1rem;
+      font-weight: bold;
+      min-height: 28px;
+      margin-bottom: 16px;
+      color: #fff;
+      text-align: center;
+    }
+
+    #zone-saisie {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    #entree {
+      background: #121213;
+      border: 2px solid #565758;
+      color: #fff;
+      font-size: 1.2rem;
+      padding: 10px 14px;
+      border-radius: 6px;
+      width: 160px;
+      text-transform: uppercase;
+      outline: none;
+      letter-spacing: 4px;
+    }
+
+    #entree:focus { border-color: #818384; }
+
+    #bouton-valider {
+      background: #538d4e;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: bold;
+      padding: 10px 18px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    #bouton-valider:hover:not(:disabled) { background: #6aaf64; }
+    #bouton-valider:disabled { background: #3a3a3c; cursor: default; }
+
+    #clavier {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .rangee-clavier { display: flex; gap: 5px; }
+
+    .touche {
+      background: #818384;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-weight: bold;
+      width: 36px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: background 0.3s;
+      user-select: none;
+    }
+
+    .touche.correcte { background: #538d4e; }
+    .touche.presente { background: #b59f3b; }
+    .touche.absente  { background: #3a3a3c; }
+  </style>
+</head>
+<body>
+  <h1>WORDLE</h1>
+
+  <div id="grille"></div>
+  <div id="message"></div>
+
+  <div id="zone-saisie">
+    <input id="entree" type="text" maxlength="5" placeholder="XXXXX"
+           autocomplete="off" spellcheck="false"/>
+    <button id="bouton-valider">Valider</button>
+  </div>
+
+  <div id="clavier"></div>
+
+  <script>
+    const MOT = "merci";
+    const ESSAIS_MAX = 6;
+
+    let essaisRestants = ESSAIS_MAX;
+    let ligneActuelle = 0;
+    let fini = false;
+
+    const etatClavier = {};
+    const lignes = [];
+
+    // Construire la grille
+    const grille = document.getElementById("grille");
+    for (let i = 0; i < ESSAIS_MAX; i++) {
+      const ligne = document.createElement("div");
+      ligne.className = "ligne";
+      const cases = [];
+      for (let j = 0; j < 5; j++) {
+        const c = document.createElement("div");
+        c.className = "case";
+        ligne.appendChild(c);
+        cases.push(c);
+      }
+      grille.appendChild(ligne);
+      lignes.push(cases);
+    }
+
+    // Clavier virtuel AZERTY
+    const rangees = ["azertyuiop", "qsdfghjklm", "wxcvbn"];
+    const clavierDiv = document.getElementById("clavier");
+    const toucheElements = {};
+
+    rangees.forEach(rangee => {
+      const row = document.createElement("div");
+      row.className = "rangee-clavier";
+      for (const lettre of rangee) {
+        const t = document.createElement("div");
+        t.className = "touche";
+        t.textContent = lettre.toUpperCase();
+        t.dataset.lettre = lettre;
+        t.addEventListener("click", () => {
+          const input = document.getElementById("entree");
+          if (input.value.length < 5 && !fini) input.value += lettre;
+        });
+        row.appendChild(t);
+        toucheElements[lettre] = t;
+        etatClavier[lettre] = null;
+      }
+      clavierDiv.appendChild(row);
+    });
+
+    function analyserEssai(essai, mot) {
+      const result = [];
+      for (let i = 0; i < essai.length; i++) {
+        const l = essai[i];
+        if (l === mot[i])       result.push({ couleur: "correcte", lettre: l });
+        else if (mot.includes(l)) result.push({ couleur: "presente", lettre: l });
+        else                    result.push({ couleur: "absente",  lettre: l });
+      }
+      return result;
+    }
+
+    function mettreAJourClavier(analyse) {
+      const priorite = { correcte: 3, presente: 2, absente: 1, null: 0 };
+      for (const { couleur, lettre } of analyse) {
+        if ((priorite[couleur] || 0) > (priorite[etatClavier[lettre]] || 0)) {
+          etatClavier[lettre] = couleur;
+          toucheElements[lettre].className = "touche " + couleur;
+        }
+      }
+    }
+
+    function valider() {
+      if (fini) return;
+      const entree = document.getElementById("entree");
+      const essai = entree.value.toLowerCase().trim();
+      entree.value = "";
+
+      if (essai.length !== 5) {
+        document.getElementById("message").textContent = "Le mot doit contenir 5 lettres.";
+        return;
+      }
+
+      const analyse = analyserEssai(essai, MOT);
+      const casesLigne = lignes[ligneActuelle];
+
+      analyse.forEach(({ couleur, lettre }, i) => {
+        casesLigne[i].textContent = lettre.toUpperCase();
+        casesLigne[i].className = "case " + couleur;
+      });
+
+      mettreAJourClavier(analyse);
+      ligneActuelle++;
+      essaisRestants--;
+
+      if (essai === MOT) {
+        document.getElementById("message").textContent = "🎉 Bravo ! Tu as deviné le mot MERCI !";
+        document.getElementById("bouton-valider").disabled = true;
+        fini = true;
+        return;
+      }
+
+      if (essaisRestants === 0) {
+        document.getElementById("message").textContent = "Dommage ! Le mot était : " + MOT.toUpperCase();
+        document.getElementById("bouton-valider").disabled = true;
+        fini = true;
+      }
+    }
+
+    document.getElementById("bouton-valider").addEventListener("click", valider);
+    document.getElementById("entree").addEventListener("keydown", e => {
+      if (e.key === "Enter") valider();
+    });
+    document.getElementById("entree").addEventListener("input", e => {
+      e.target.value = e.target.value.replace(/[^a-zA-Z]/g, "").slice(0, 5);
+    });
+  </script>
+</body>
+</html>
